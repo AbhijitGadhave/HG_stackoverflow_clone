@@ -76,7 +76,7 @@ if config_env() == :prod do
   config :api, :llm,
     api_base: System.get_env("LLM_API_BASE") || "http://localhost:11434/v1",
     api_key: System.get_env("LLM_API_KEY") || "ollama-no-key",
-    model:   System.get_env("LLM_MODEL")   || "llama3"  
+    model:   System.get_env("LLM_MODEL")   || "llama3:8b"  
 
   # ## SSL Support
   #
