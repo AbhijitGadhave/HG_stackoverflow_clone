@@ -1,48 +1,168 @@
 defmodule Api.Search.Reranker do
-  @moduledoc "Rerank answers using an OpenAI-compatible Chat Completions API."
-  @api_base Application.compile_env(:api, :llm)[:api_base]
-  @api_key  Application.compile_env(:api, :llm)[:api_key]
-  @model   Application.compile_env(:api, :llm)[:model]
 
-  @headers [{"authorization", "Bearer #{@api_key}"}, {"content-type", "application/json"}]
+  require Logger
 
-  @prompt """
-  You are a strict technical judge. Given a user question and a list of StackOverflow answers (HTML bodies),
-  return ONLY a JSON array of answer_id in the best order (most accurate/relevant first).
+  defp llm_cfg, do: Application.get_env(:api, :llm, [])
+
+  defp llm_api_base do
+    llm_cfg()
+    |> Keyword.get(:api_base, "http://localhost:11434/v1")
+    |> String.trim_trailing("/")
+  end
+
+  defp llm_model,   do: Keyword.get(llm_cfg(), :model, "llama3:8b")
+  defp llm_api_key, do: Keyword.get(llm_cfg(), :api_key)
+
+  defp headers do
+    base = [{"content-type", "application/json"}]
+    case llm_api_key() do
+      nil -> base
+      key -> [{"authorization", "Bearer #{key}"} | base]
+    end
+  end
+
+  @system_prompt """
+  You are a strict JSON API.
+  Task: Given a question and a list of answers, return ONLY a JSON array of answer_id integers
+  in the best order (most accurate/relevant first). No extra text. No code fences. No keys, just integers.
+  Example: [59353516, 59319461, 77078736]
   """
 
-  def rerank!(question, answers) when is_list(answers) do
-    content = %{
-      question: question,
-      answers: Enum.map(answers, fn a ->
-        %{answer_id: a["answer_id"], score: a["score"], is_accepted: a["is_accepted"], body: a["body"]}
+  defp build_user_payload(question, answers) do
+    trimmed =
+      answers
+      |> Enum.map(fn a ->
+        %{
+          answer_id: a["answer_id"],
+          score: a["score"],
+          is_accepted: a["is_accepted"],
+          body:
+            a["body"]
+            |> strip_html()
+            |> String.slice(0, 240) 
+        }
       end)
-    }
+
+    Jason.encode!(%{question: question, answers: trimmed})
+  end
+
+  defp strip_html(body) when is_binary(body) do
+    body
+    |> String.replace(~r/<[^>]*>/, " ")
+    |> String.replace(~r/\s+/, " ")
+    |> String.trim()
+  end
+
+  defp strip_html(_), do: ""
+
+  def rerank!(question, answers) when is_list(answers) do
+    user_content = build_user_payload(question, answers)
 
     body = %{
-      model: @model,
+      model: llm_model(),
       messages: [
-        %{role: "system", content: @prompt},
-        %{role: "user",   content: Jason.encode!(content)}
+        %{role: "system", content: @system_prompt},
+        %{role: "user",   content: user_content}
       ],
-      temperature: 0.1
+      temperature: 0
     }
 
-    with {:ok, resp} <- safe_post("#{@api_base}/chat/completions", body),
-         text when is_binary(text) <- get_in(resp, ["choices", Access.at(0), "message", "content"]),
-         {:ok, ids} when is_list(ids) <- Jason.decode(text) do
-      by_id = Map.new(answers, &{&1["answer_id"], &1})
-      ids |> Enum.map(&by_id[&1]) |> Enum.filter(& &1)
+    url_v1     = llm_api_base() <> "/chat/completions"
+    url_legacy = (llm_api_base() |> String.replace_suffix("/v1", "")) <> "/api/chat"
+
+    with {:ok, resp} <- safe_post(url_v1, body),
+         {:ok, ids}  <- extract_ids_from_v1(resp),
+         reranked     <- reorder_by_ids(answers, ids) do
+      reranked
     else
-      _ -> answers
+     _v1_error ->
+        Logger.warning("v1/chat/completions failed or not pure JSON; trying /api/chat legacy...")
+
+        legacy_body = Map.put(body, :stream, false)
+
+        case safe_post(url_legacy, legacy_body) do
+          {:ok, resp} ->
+            case extract_ids_from_legacy(resp) do
+              {:ok, ids} -> reorder_by_ids(answers, ids)
+              _          -> warn_and_fallback(resp, answers)
+            end
+
+          err ->
+            Logger.error("Legacy /api/chat failed: #{inspect(err)}")
+            answers
+        end
     end
   end
 
   defp safe_post(url, json) do
     try do
-      {:ok, Req.post!(url, finch: ApiFinch, headers: @headers, json: json).body}
+      resp =
+        Req.post!(
+          url,
+          finch: ApiFinch,
+          headers: headers(),
+          json: json,
+          receive_timeout: 60_000
+        )
+
+      {:ok, resp.body}
     rescue
-      _ -> {:error, :post_failed}
+      e ->
+        Logger.error("HTTP request failed: #{inspect(e)}")
+        {:error, :post_failed}
     end
+  end
+
+  defp extract_ids_from_v1(%{"choices" => [%{"message" => %{"content" => text}} | _]}) do
+    extract_json_array_of_ints(text)
+  end
+  defp extract_ids_from_v1(_), do: {:error, :bad_v1_shape}
+
+  defp extract_ids_from_legacy(%{"message" => %{"content" => text}}) do
+    extract_json_array_of_ints(text)
+  end
+  defp extract_ids_from_legacy(_), do: {:error, :bad_legacy_shape}
+
+  defp extract_json_array_of_ints(text) when is_binary(text) do
+    case Jason.decode(text) do
+      {:ok, list} when is_list(list) ->
+        if list_of_ints?(list), do: {:ok, list}, else: {:error, :not_ints}
+      _ ->
+        case Regex.run(~r/\[[^\]]*\]/s, text) do
+          [json] ->
+            case Jason.decode(json) do
+              {:ok, list} when is_list(list) ->
+                if list_of_ints?(list), do: {:ok, list}, else: {:error, :json_not_int_array}
+              other ->
+                {:error, {:json_decode_error, other}}
+            end
+
+          _ ->
+            {:error, :no_json_array_found}
+        end
+    end
+  end
+
+  defp extract_json_array_of_ints(_), do: {:error, :non_binary_text}
+
+  defp list_of_ints?(list) do
+    Enum.all?(list, &is_integer/1)
+  end
+
+  defp reorder_by_ids(answers, ids) when is_list(ids) do
+    by_id = Map.new(answers, &{&1["answer_id"], &1})
+
+    ids
+    |> Enum.map(&Map.get(by_id, &1))
+    |> Enum.reject(&is_nil/1)
+    |> case do
+      [] -> answers
+      list -> list
+    end
+  end
+
+  defp warn_and_fallback(resp, answers) do
+    Logger.warning("LLM returned non-JSON or empty after legacy parse: #{inspect(resp)}; using original order")
+    answers
   end
 end
