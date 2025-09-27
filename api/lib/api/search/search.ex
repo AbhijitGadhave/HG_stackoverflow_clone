@@ -1,5 +1,4 @@
 defmodule Api.Search do
-  require Logger
   import Ecto.Query
   alias Api.Repo
   alias Api.Search.{SearchQuery, SoClient, Reranker}
@@ -7,8 +6,6 @@ defmodule Api.Search do
   def search_and_cache!(anon_id, question) do
     original = SoClient.search_and_answers!(question)
     reranked = Reranker.rerank!(question, original)
-    Logger.debug(">>> original: #{inspect(original)}")
-    Logger.debug(">>> reranked: #{inspect(reranked)}")
 
     {:ok, _} =
       %SearchQuery{}
