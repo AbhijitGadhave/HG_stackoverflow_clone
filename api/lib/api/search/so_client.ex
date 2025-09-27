@@ -1,16 +1,27 @@
 defmodule Api.Search.SoClient do
   @moduledoc "Thin client for Stack Exchange API using Req."
-  @site Application.compile_env(:api, :stackexchange)[:site]
-  @key  Application.compile_env(:api, :stackexchange)[:key]
 
   @search_url  "https://api.stackexchange.com/2.3/search/advanced"
   @answers_url "https://api.stackexchange.com/2.3/questions/{ids}/answers"
 
+  defp se_site do
+    Application.get_env(:api, :stackexchange, [])
+    |> Keyword.get(:site, "stackoverflow")
+  end
+
+  defp se_key do
+    Application.get_env(:api, :stackexchange, [])
+    |> Keyword.get(:key)
+  end
+
   def search_and_answers!(question) do
+    site = se_site()
+    key = se_key()
+
     %{"items" => questions} =
       Req.get!(@search_url,
         finch: ApiFinch,
-        params: [order: "desc", sort: "relevance", q: question, site: @site, key: @key, pagesize: 5]
+        params: [order: "desc", sort: "relevance", q: question, site: site, key: key, pagesize: 5]
       ).body
 
     ids = questions |> Enum.map(& &1["question_id"]) |> Enum.join(";")
@@ -20,7 +31,7 @@ defmodule Api.Search.SoClient do
       Req.get!(
         String.replace(@answers_url, "{ids}", ids),
         finch: ApiFinch,
-        params: [order: "desc", sort: "votes", site: @site, key: @key, filter: "withbody", pagesize: 20]
+        params: [order: "desc", sort: "votes", site: site, key: key, filter: "withbody", pagesize: 20]
       ).body
 
     Enum.map(answers, fn a ->
