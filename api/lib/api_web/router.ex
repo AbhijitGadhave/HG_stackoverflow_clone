@@ -3,10 +3,28 @@ defmodule ApiWeb.Router do
 
   pipeline :api do
     plug :accepts, ["json"]
+    plug CORSPlug, origin: ["*"]
+    plug :fetch_cookies 
+    plug :assign_anon_id  
   end
 
   scope "/api", ApiWeb do
     pipe_through :api
+    get "/recent", RecentController, :index
+    get "/search", QuestionController, :index
+  end
+
+  defp assign_anon_id(conn, _opts) do
+    case conn.cookies["anon_id"] do
+      nil ->
+        id = Base.url_encode64(:crypto.strong_rand_bytes(6))
+        conn
+        |> put_resp_cookie("anon_id", id, max_age: 60*60*24*365, same_site: "Lax", http_only: false)
+        |> assign(:anon_id, id)
+
+      v ->
+        assign(conn, :anon_id, v)
+    end
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development
