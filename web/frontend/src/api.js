@@ -4,7 +4,7 @@ const API_BASE = "http://localhost:4000";
 
 const http = axios.create({
   baseURL: API_BASE,
-  timeout: 15000,
+  timeout: 45000,
   withCredentials: true
 });
 
