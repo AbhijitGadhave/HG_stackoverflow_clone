@@ -67,6 +67,17 @@ if config_env() == :prod do
     ],
     secret_key_base: secret_key_base
 
+  # Stack Exchange (Stack Overflow) settings
+  config :api, :stackexchange,
+    key: System.get_env("STACKEXCHANGE_KEY"),
+    site: System.get_env("STACKEXCHANGE_SITE") || "stackoverflow"
+
+  # LLM (OpenAI-compatible) settings
+  config :api, :llm,
+    api_base: System.get_env("LLM_API_BASE") || "http://localhost:11434/v1",
+    api_key: System.get_env("LLM_API_KEY") || "ollama-no-key",
+    model:   System.get_env("LLM_MODEL")   || "llama3:8b"  
+
   # ## SSL Support
   #
   # To get SSL working, you will need to add the `https` key
