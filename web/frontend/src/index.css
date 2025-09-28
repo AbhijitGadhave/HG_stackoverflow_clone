@@ -1,0 +1,37 @@
+@import "tailwindcss";
+
+:root {
+  --so-brand: #f48024;
+}
+a { color: #0a95ff; }
+a:hover { text-decoration: underline; }
+
+.prose { max-width: none; }
+.prose pre { overflow: auto; background: #f6f6f6; padding: .75rem; border-radius: 6px; }
+.prose code { background: #f1f1f1; padding: .1rem .25rem; border-radius: 4px; }
+
+.so-card { @apply bg-white border border-gray-200 rounded-md shadow-sm; }
+
+.so-tab {
+  @apply px-3 py-1.5 text-sm rounded-md border border-transparent
+         text-[#3b4045] bg-transparent hover:bg-[#f1f2f3] transition-colors;
+}
+
+.so-tab-active {
+  @apply bg-[#e1ecf4] text-[#39739d] border-[#7aa7c7];
+}
+
+.badge-accepted { @apply inline-flex items-center gap-1 text-green-700 font-medium; }
+
+.vote-box {
+  width: 56px;
+  min-width: 56px;
+  text-align: center;
+  color: #6a737c;
+}
+.vote-score {
+  font-size: 20px;
+  font-weight: 600;
+  color: #3b4045;
+}
+
