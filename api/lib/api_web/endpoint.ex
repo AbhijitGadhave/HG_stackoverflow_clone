@@ -8,7 +8,9 @@ defmodule ApiWeb.Endpoint do
     store: :cookie,
     key: "_api_key",
     signing_salt: "B2xTSgd3",
-    same_site: "Lax"
+    same_site: "None",
+    secure: false,
+    http_only: true
   ]
 
   socket "/live", Phoenix.LiveView.Socket,
@@ -44,6 +46,17 @@ defmodule ApiWeb.Endpoint do
     parsers: [:urlencoded, :multipart, :json],
     pass: ["*/*"],
     json_decoder: Phoenix.json_library()
+
+  plug CORSPlug,
+    origin: [
+      "http://localhost:5173",
+      "http://127.0.0.1:5173"
+    ],
+    methods: ["GET", "POST", "OPTIONS"],
+    headers: ["content-type", "authorization"],
+    credentials: true,
+    max_age: 86_400
+  
 
   plug Plug.MethodOverride
   plug Plug.Head

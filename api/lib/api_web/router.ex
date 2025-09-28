@@ -3,7 +3,8 @@ defmodule ApiWeb.Router do
 
   pipeline :api do
     plug :accepts, ["json"]
-    plug CORSPlug, origin: ["*"]
+    plug CORSPlug, origin: ["http://localhost:5173",
+      "http://127.0.0.1:5173"]
     plug :fetch_cookies 
     plug :assign_anon_id  
   end
