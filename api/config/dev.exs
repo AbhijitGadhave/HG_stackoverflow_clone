@@ -2,13 +2,10 @@ import Config
 
 # Configure your database
 config :api, Api.Repo,
-  username: "postgres",
-  password: "postgres",
-  hostname: "localhost",
-  database: "api_dev",
-  stacktrace: true,
+  url: System.get_env("DATABASE_URL", "ecto://postgres:postgres@db:5432/api_dev"),
+  pool_size: String.to_integer(System.get_env("POOL_SIZE", "10")),
   show_sensitive_data_on_connection_error: true,
-  pool_size: 10
+  stacktrace: true
 
 # For development, we disable any cache and enable
 # debugging and code reloading.
@@ -19,7 +16,7 @@ config :api, Api.Repo,
 config :api, ApiWeb.Endpoint,
   # Binding to loopback ipv4 address prevents access from other machines.
   # Change to `ip: {0, 0, 0, 0}` to allow access from other machines.
-  http: [ip: {127, 0, 0, 1}, port: String.to_integer(System.get_env("PORT") || "4000")],
+  http: [ip: {0, 0, 0, 0}, port: String.to_integer(System.get_env("PORT") || "4000")],
   thousand_island_options: [
     read_timeout: 60_000,   # time to read request body/headers
     idle_timeout: 120_000   # keep-alive idle timeout
@@ -27,6 +24,7 @@ config :api, ApiWeb.Endpoint,
   check_origin: false,
   code_reloader: true,
   debug_errors: true,
+  server: true,
   secret_key_base: "HM0UhN47rXf9MjvfcAnhNZu1B9CkOHxwE95vlT0RtyOziOfQuokT4Epmq9bl+Xas",
   watchers: []
 
